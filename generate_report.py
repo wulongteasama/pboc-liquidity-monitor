@@ -1,20 +1,18 @@
-# generate_report.py (V7 - 东方财富数据中心)
+# generate_report.py (V7.1 - Save to public folder)
 
 import requests
 import pandas as pd
 from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import time
+import os # 导入os模块来创建文件夹
 
-# --- 1. 数据抓取模块 ---
-
+# --- 1. 数据抓取模块 (无变化) ---
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     'Referer': 'https://data.eastmoney.com/',
     'Origin': 'https://data.eastmoney.com'
 }
-
 def fetch_omo_from_eastmoney_datacenter(days=90):
     print("开始从东方财富数据中心抓取OMO数据...")
     url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
@@ -65,7 +63,11 @@ def generate_interactive_report(df):
     df = df.dropna()
     if df.empty:
         print("数据处理后为空，无法生成报告。")
-        with open("liquidity_report.html", "w", encoding="utf-8") as f:
+        # 【修改点1】: 定义输出文件夹和文件路径
+        output_dir = "public"
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, "index.html")
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write("<html><body><h1>数据为空或处理失败，无法生成报告。</h1></body></html>")
         return
 
@@ -83,9 +85,13 @@ def generate_interactive_report(df):
     <style> body {{ font-family: sans-serif; margin: 40px; }} .container {{ max-width: 1200px; margin: auto; }} .header {{ text-align: center; margin-bottom: 20px; }} .kpi-container {{ display: flex; justify-content: space-around; text-align: center; margin-bottom: 40px; }} .kpi-box {{ padding: 20px; border-radius: 8px; background-color: #f8f9fa; min-width: 200px; }} .kpi-value {{ font-size: 2.5em; font-weight: bold; }} .kpi-label {{ font-size: 1em; color: #6c757d; }} .positive {{ color: #dc3545; }} .negative {{ color: #28a745; }} </style></head>
     <body><div class="container"> <div class="header"><h1>央行流动性监测报告</h1><p>最后更新时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p></div> <div class="kpi-container"> <div class="kpi-box"><div class="kpi-value {'positive' if latest_data['net_injection'] > 0 else 'negative'}">{latest_data['net_injection']:+.0f}</div><div class="kpi-label">最新净投放 (亿元)</div></div> <div class="kpi-box"><div class="kpi-value">{latest_data['dr007']:.3f}%</div><div class="kpi-label">最新 DR007 利率</div></div> <div class="kpi-box"><div class="kpi-value {'positive' if df['net_injection'].tail(7).mean() > 0 else 'negative'}">{df['net_injection'].tail(7).mean():+.0f}</div><div class="kpi-label">近7日平均净投放 (亿元)</div></div> </div> {fig.to_html(full_html=False, include_plotlyjs='cdn')} </div></body></html>
     """
-    with open("liquidity_report.html", "w", encoding="utf-8") as f:
+    # 【修改点2】: 将报告保存到 public 文件夹下，并重命名为 index.html
+    output_dir = "public"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "index.html")
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(report_html)
-    print("报告生成成功！请打开 'liquidity_report.html' 文件查看。")
+    print(f"报告生成成功！已保存到 {output_path}")
 
 if __name__ == "__main__":
     omo_df = fetch_omo_from_eastmoney_datacenter(days=90)
