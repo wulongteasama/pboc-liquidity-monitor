@@ -1,4 +1,4 @@
-# generate_report.py (V7.2 - Final Confirmed Version)
+# generate_report.py (V7.3 - Final Resilient Version)
 
 import requests
 import pandas as pd
@@ -23,7 +23,19 @@ def fetch_omo_from_eastmoney_datacenter(days=90):
     try:
         response = requests.get(url, headers=HEADERS, params=params, timeout=20)
         response.raise_for_status()
-        data = response.json()['result']['data']
+        json_data = response.json()
+        
+        # 【最终修复】: 增加健壮性检查，确保API返回了我们期望的结构
+        if not json_data.get('result') or not isinstance(json_data['result'].get('data'), list):
+            print("  - 东方财富OMO API返回的JSON格式不正确或不包含数据。")
+            print(f"  - API响应预览: {str(json_data)[:300]}") # 打印API返回的内容以供调试
+            return pd.DataFrame()
+
+        data = json_data['result']['data']
+        if not data:
+            print("  - 东方财富OMO API返回了空的数据列表。")
+            return pd.DataFrame()
+
         df = pd.DataFrame(data)
         df['date'] = pd.to_datetime(df['TRADE_DATE'])
         df['injection'] = pd.to_numeric(df['OP_R_TRADING'], errors='coerce').fillna(0)
@@ -47,7 +59,19 @@ def fetch_dr007_from_eastmoney_datacenter(days=90):
     try:
         response = requests.get(url, headers=HEADERS, params=params, timeout=20)
         response.raise_for_status()
-        data = response.json()['result']['data']
+        json_data = response.json()
+
+        # 【最终修复】: 增加健壮性检查
+        if not json_data.get('result') or not isinstance(json_data['result'].get('data'), list):
+            print("  - 东方财富DR007 API返回的JSON格式不正确或不包含数据。")
+            print(f"  - API响应预览: {str(json_data)[:300]}")
+            return pd.DataFrame()
+
+        data = json_data['result']['data']
+        if not data:
+            print("  - 东方财富DR007 API返回了空的数据列表。")
+            return pd.DataFrame()
+
         df = pd.DataFrame(data)
         df['date'] = pd.to_datetime(df['REPORT_DATE'])
         df['dr007'] = pd.to_numeric(df['LATEST'], errors='coerce')
@@ -60,8 +84,6 @@ def fetch_dr007_from_eastmoney_datacenter(days=90):
 
 def generate_interactive_report(df):
     print("开始生成交互式HTML报告...")
-    
-    # 定义输出文件夹和文件路径
     output_dir = "public"
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "index.html")
@@ -99,5 +121,4 @@ if __name__ == "__main__":
         generate_interactive_report(combined_df)
     else:
         print("因部分或全部数据抓取失败，无法生成报告。")
-        # 即使失败，也要创建一个空的报告文件，确保部署步骤不会出错
         generate_interactive_report(pd.DataFrame())
