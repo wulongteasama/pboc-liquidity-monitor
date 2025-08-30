@@ -6,6 +6,8 @@ on:
       - main
   schedule:
     - cron: '30 2 * * 1-5'
+  # 增加手动触发的选项
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -31,6 +33,7 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # 确保从 public 文件夹部署
           publish_dir: ./public
           publish_branch: gh-pages
           force_orphan: true
