@@ -1,4 +1,4 @@
-# generate_report.py (V13 - Final with Cookie Authentication)
+# generate_report.py (V14 - Final Method Fix)
 
 import requests
 import pandas as pd
@@ -8,31 +8,25 @@ from plotly.subplots import make_subplots
 import os
 
 # --- 1. 数据抓取模块 ---
-
-# 【新】: 从环境变量中读取我们存入的Cookie
 datayes_cookie = os.getenv('DATAYES_COOKIE')
-
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     'Referer': 'https://robo.datayes.com/',
     'Origin': 'https://robo.datayes.com',
-    'Content-Type': 'application/json'
 }
-
-# 【新】: 如果Cookie存在，就把它加入到请求头中
 if datayes_cookie:
     HEADERS['Cookie'] = datayes_cookie
     print("成功加载Cookie，将使用认证模式访问API。")
 else:
     print("警告: 未找到Cookie，将尝试匿名访问API（可能失败）。")
 
-
 def fetch_omo_from_datayes(days=90):
     print("开始从Datayes API抓取OMO数据...")
     url = "https://robo.datayes.com/v2/client/market/get_open_market_op"
     payload = {"opType": "RRP", "period": "3M"}
     try:
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=20)
+        # 【最终修复】: 将请求方法从 POST 改为 GET，参数从 json 改为 params
+        response = requests.get(url, headers=HEADERS, params=payload, timeout=20)
         response.raise_for_status()
         json_data = response.json()
 
@@ -63,7 +57,8 @@ def fetch_dr007_from_datayes(days=90):
     url = "https://robo.datayes.com/v2/client/market/get_interbank_rate"
     payload = {"rateType": "DR", "period": "3M"}
     try:
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=20)
+        # 【最终修复】: 将请求方法从 POST 改为 GET，参数从 json 改为 params
+        response = requests.get(url, headers=HEADERS, params=payload, timeout=20)
         response.raise_for_status()
         json_data = response.json()
 
