@@ -1,4 +1,4 @@
-# generate_report.py (V10 - Sina Finance API Final)
+# generate_report.py (V12 - Datayes API Final Version)
 
 import requests
 import pandas as pd
@@ -6,65 +6,76 @@ from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
-import json
 
 # --- 1. 数据抓取模块 ---
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-    'Referer': 'https://finance.sina.com.cn/',
+    'Referer': 'https://robo.datayes.com/',
+    'Origin': 'https://robo.datayes.com',
+    'Content-Type': 'application/json'
 }
 
-def fetch_omo_from_sina(days=90):
-    print("开始从新浪财经数据接口抓取OMO数据...")
-    url = f"https://quotes.sina.cn/fx/api/openapi.php/Fx_NewsSvr_Open_Market_Data?page=1&num={days}"
+def fetch_omo_from_datayes(days=90):
+    """从Datayes API获取央行公开市场操作数据"""
+    print("开始从Datayes API抓取OMO数据...")
+    url = "https://robo.datayes.com/v2/client/market/get_open_market_op"
+    # API需要一个POST请求体，我们请求最近3个月(3M)的逆回购(RRP)数据
+    payload = {"opType": "RRP", "period": "3M"}
     try:
-        response = requests.get(url, headers=HEADERS, timeout=20)
+        response = requests.post(url, headers=HEADERS, json=payload, timeout=20)
         response.raise_for_status()
         json_data = response.json()
 
-        if not json_data.get('result') or not isinstance(json_data['result'].get('data'), list):
-            print(f"  - 新浪财经OMO API返回格式不正确: {str(json_data)[:300]}")
+        if json_data.get('code') != 0 or not isinstance(json_data.get('data'), list):
+            print(f"  - Datayes OMO API返回错误或格式不正确: {json_data.get('message')}")
             return pd.DataFrame()
 
-        data = json_data['result']['data']
+        data = json_data['data']
         if not data:
-            print("  - 新浪财经OMO API返回了空的数据列表。")
+            print("  - Datayes OMO API返回了空的数据列表。")
             return pd.DataFrame()
 
         df = pd.DataFrame(data)
-        df['date'] = pd.to_datetime(df['date'])
-        df['injection'] = pd.to_numeric(df['day_deal_money'], errors='coerce').fillna(0)
-        df['maturity'] = pd.to_numeric(df['day_due_money'], errors='coerce').fillna(0)
+        df['date'] = pd.to_datetime(df['opDate'])
+        df['injection'] = pd.to_numeric(df['opRepoMoney'], errors='coerce').fillna(0)
+        df['maturity'] = pd.to_numeric(df['opRepoDueMoney'], errors='coerce').fillna(0)
         df['net_injection'] = df['injection'] - df['maturity']
         
-        final_df = df[['date', 'net_injection']].set_index('date').sort_index()
+        final_df = df[['date', 'net_injection']].set_index('date').sort_index().tail(days)
         print(f"成功抓取 {len(final_df)} 天的公开市场操作记录。")
         return final_df
     except Exception as e:
-        print(f"从新浪财经抓取OMO数据失败: {e}")
+        print(f"从Datayes抓取OMO数据失败: {e}")
         return pd.DataFrame()
 
-def fetch_dr007_from_sina(days=90):
-    print("开始从新浪财经数据接口抓取 DR007 历史利率数据...")
-    url = f"https://money.finance.sina.com.cn/mac/api/jsonp.php/SINAREMOTECALLCALLBACK/MacPage_Service.get_p_l_shibor?yy=2024&type=DR007&num={days+30}"
+def fetch_dr007_from_datayes(days=90):
+    """从Datayes API获取DR007历史数据"""
+    print("开始从Datayes API抓取 DR007 历史利率数据...")
+    url = "https://robo.datayes.com/v2/client/market/get_interbank_rate"
+    payload = {"rateType": "DR", "period": "3M"}
     try:
-        response = requests.get(url, headers=HEADERS, timeout=20)
+        response = requests.post(url, headers=HEADERS, json=payload, timeout=20)
         response.raise_for_status()
+        json_data = response.json()
+
+        if json_data.get('code') != 0 or not isinstance(json_data.get('data'), list):
+            print(f"  - Datayes DR007 API返回错误或格式不正确: {json_data.get('message')}")
+            return pd.DataFrame()
+
+        data = json_data['data']
+        if not data:
+            print("  - Datayes DR007 API返回了空的数据列表。")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['tradeDate'])
+        df['dr007'] = pd.to_numeric(df['rateDR007'], errors='coerce')
         
-        text = response.text
-        start = text.find('[')
-        end = text.rfind(']')
-        if start == -1 or end == -1:
-            raise ValueError(f"Response text does not contain valid JSON array: {text[:200]}")
-        
-        json_str = text[start : end+1]
-        data = pd.read_json(json_str)
-        data['d'] = pd.to_datetime(data['d'])
-        data = data.rename(columns={'d': 'date', 'v': 'dr007'}).set_index('date').sort_index()
-        print(f"成功抓取 {len(data)} 条 DR007 记录。")
-        return data
+        final_df = df[['date', 'dr007']].set_index('date').sort_index().tail(days)
+        print(f"成功抓取 {len(final_df)} 条 DR007 记录。")
+        return final_df
     except Exception as e:
-        print(f"从新浪财经抓取 DR007 数据失败: {e}")
+        print(f"从Datayes抓取 DR007 数据失败: {e}")
         return pd.DataFrame()
 
 def generate_interactive_report(df):
@@ -73,14 +84,13 @@ def generate_interactive_report(df):
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "index.html")
 
-    df = df.dropna()
-    if df.empty:
-        print("数据处理后为空，无法生成报告。")
+    if df.empty or df.dropna().empty:
+        print("数据为空或处理失败，无法生成报告。")
         with open(output_path, "w", encoding="utf-8") as f:
             f.write("<html><body><h1>数据为空或处理失败，无法生成报告。</h1></body></html>")
         return
 
-    latest_data = df.iloc[-1]
+    latest_data = df.dropna().iloc[-1]
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     colors = ['#EE6363' if x > 0 else '#90EE90' for x in df['net_injection']]
     fig.add_trace(go.Bar(x=df.index, y=df['net_injection'], name='净投放/回笼 (亿元)', marker_color=colors), secondary_y=False)
@@ -99,11 +109,8 @@ def generate_interactive_report(df):
     print(f"报告生成成功！已保存到 {output_path}")
 
 if __name__ == "__main__":
-    import warnings
-    warnings.simplefilter(action='ignore', category=FutureWarning)
-
-    omo_df = fetch_omo_from_sina(days=90)
-    dr007_df = fetch_dr007_from_sina(days=90)
+    omo_df = fetch_omo_from_datayes(days=90)
+    dr007_df = fetch_dr007_from_datayes(days=90)
     if not omo_df.empty and not dr007_df.empty:
         combined_df = dr007_df.join(omo_df).fillna({'net_injection': 0}).dropna(subset=['dr007'])
         generate_interactive_report(combined_df)
