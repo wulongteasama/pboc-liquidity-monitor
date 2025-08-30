@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '30 2 * * 1-5' # 每天北京时间上午10:30运行
+    - cron: '30 2 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -26,6 +26,9 @@ jobs:
           pip install -r requirements.txt
 
       - name: Generate Report 📊
+        # 【新】: 把Cookie作为环境变量传递给Python脚本
+        env:
+          DATAYES_COOKIE: ${{ secrets.DATAYES_COOKIE }}
         run: python generate_report.py
 
       - name: Deploy to GitHub Pages 🚀
