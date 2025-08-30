@@ -1,4 +1,4 @@
-# generate_report.py (V8 - 新浪财经API)
+# generate_report.py (V9 - Selenium 终极版)
 
 import requests
 import pandas as pd
@@ -6,61 +6,98 @@ from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
-import json
+import time
+import re
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 
 # --- 1. 数据抓取模块 ---
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-    'Referer': 'https://finance.sina.com.cn/', # 伪装成从新浪财经跳转
-}
 
-def fetch_omo_from_sina(days=90):
-    print("开始从新浪财经数据接口抓取OMO数据...")
-    # 新浪财经的央行公开市场操作历史数据接口
-    url = f"https://quotes.sina.cn/fx/api/openapi.php/Fx_NewsSvr_Open_Market_Data?page=1&num={days}"
+def setup_selenium_driver():
+    """配置并启动一个用于GitHub Actions的无头Chrome浏览器"""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless") # 无头模式
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
+    
+    # 在GitHub Actions环境中，驱动程序通常是自动管理的
+    # 我们直接初始化WebDriver
+    driver = webdriver.Chrome(options=chrome_options)
+    return driver
+
+def fetch_pbc_omo_history_selenium(pages=3):
+    """使用Selenium驱动真实浏览器，从央行官网抓取OMO数据"""
+    print("开始从央行官网抓取OMO数据 (Selenium模式)...")
+    base_url = "http://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/"
+    all_operations = []
+    driver = setup_selenium_driver()
+
     try:
-        response = requests.get(url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-        json_data = response.json()
+        for i in range(pages):
+            url = f"{base_url}index{i+1}.html" if i > 0 else f"{base_url}index.html"
+            print(f"正在处理列表页: {url}")
+            driver.get(url)
+            time.sleep(3) # 等待页面JavaScript加载
 
-        if not json_data.get('result') or not isinstance(json_data['result'].get('data'), list):
-            print(f"  - 新浪财经OMO API返回格式不正确: {str(json_data)[:300]}")
-            return pd.DataFrame()
+            # 使用CSS选择器找到公告列表的每一行
+            rows = driver.find_elements(By.CSS_SELECTOR, 'div#r_con_con table tr')
+            if not rows:
+                print(f"  - 第 {i+1} 页未找到公告列表。")
+                break
 
-        data = json_data['result']['data']
-        if not data:
-            print("  - 新浪财经OMO API返回了空的数据列表。")
-            return pd.DataFrame()
+            for row in rows:
+                try:
+                    title_element = row.find_element(By.CSS_SELECTOR, 'td:nth-child(1) a')
+                    date_element = row.find_element(By.CSS_SELECTOR, 'td:nth-child(2)')
+                    
+                    title = title_element.text
+                    date_str = date_element.text
 
-        df = pd.DataFrame(data)
-        df['date'] = pd.to_datetime(df['date'])
-        # 数据列名是中文，我们需要转换
-        df['injection'] = pd.to_numeric(df['day_deal_money'], errors='coerce').fillna(0)
-        df['maturity'] = pd.to_numeric(df['day_due_money'], errors='coerce').fillna(0)
-        df['net_injection'] = df['injection'] - df['maturity']
-        
-        final_df = df[['date', 'net_injection']].set_index('date').sort_index()
-        print(f"成功抓取 {len(final_df)} 天的公开市场操作记录。")
-        return final_df
-    except Exception as e:
-        print(f"从新浪财经抓取OMO数据失败: {e}")
+                    if "公开市场业务交易公告" in title:
+                        injection_match = re.search(r'(\d+)\s*亿元', title)
+                        maturity_match = re.search(r'有(\d+)\s*亿元.*到期', title)
+                        
+                        injection = int(injection_match.group(1)) if injection_match else 0
+                        maturity = int(maturity_match.group(1)) if maturity_match else 0
+                        
+                        if "不开展" in title:
+                            injection = 0
+
+                        net_injection = injection - maturity
+                        
+                        all_operations.append({
+                            "date": pd.to_datetime(date_str),
+                            "net_injection": net_injection
+                        })
+                except Exception:
+                    continue # 忽略表头或格式不正确的行
+    finally:
+        driver.quit() # 确保浏览器进程被关闭
+
+    if not all_operations:
+        print("未能从央行官网抓取到任何公开市场操作记录。")
         return pd.DataFrame()
 
+    df = pd.DataFrame(all_operations).drop_duplicates(subset=['date']).set_index('date').sort_index()
+    print(f"成功抓取 {len(df)} 条公开市场操作记录。")
+    return df
+
 def fetch_dr007_from_sina(days=90):
+    """由于所有API都可能被云IP屏蔽，我们回归到最简单的新浪财经API作为DR007的来源"""
     print("开始从新浪财经数据接口抓取 DR007 历史利率数据...")
-    # 新浪财经的银行间拆借利率接口
     url = f"https://money.finance.sina.com.cn/mac/api/jsonp.php/SINAREMOTECALLCALLBACK/MacPage_Service.get_p_l_shibor?yy=2024&type=DR007&num={days+30}"
+    headers = {'Referer': 'https://finance.sina.com.cn/'}
     try:
-        response = requests.get(url, headers=HEADERS, timeout=20)
+        response = requests.get(url, headers=headers, timeout=20)
         response.raise_for_status()
-        
-        # 清理返回的JS回调格式，提取JSON部分
         text = response.text
         start = text.find('[')
         end = text.rfind(']')
         if start == -1 or end == -1:
             raise ValueError(f"Response text does not contain valid JSON array: {text[:200]}")
-        
         json_str = text[start : end+1]
         data = pd.read_json(json_str)
         data['d'] = pd.to_datetime(data['d'])
@@ -103,11 +140,10 @@ def generate_interactive_report(df):
     print(f"报告生成成功！已保存到 {output_path}")
 
 if __name__ == "__main__":
-    # 忽略pandas的FutureWarning
     import warnings
     warnings.simplefilter(action='ignore', category=FutureWarning)
 
-    omo_df = fetch_omo_from_sina(days=90)
+    omo_df = fetch_pbc_omo_history_selenium(pages=5)
     dr007_df = fetch_dr007_from_sina(days=90)
     if not omo_df.empty and not dr007_df.empty:
         combined_df = dr007_df.join(omo_df).fillna({'net_injection': 0}).dropna(subset=['dr007'])
