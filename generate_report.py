@@ -1,4 +1,4 @@
-# generate_report.py (V12 - Datayes API Final Version)
+# generate_report.py (V13 - Final with Cookie Authentication)
 
 import requests
 import pandas as pd
@@ -8,6 +8,10 @@ from plotly.subplots import make_subplots
 import os
 
 # --- 1. 数据抓取模块 ---
+
+# 【新】: 从环境变量中读取我们存入的Cookie
+datayes_cookie = os.getenv('DATAYES_COOKIE')
+
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     'Referer': 'https://robo.datayes.com/',
@@ -15,11 +19,17 @@ HEADERS = {
     'Content-Type': 'application/json'
 }
 
+# 【新】: 如果Cookie存在，就把它加入到请求头中
+if datayes_cookie:
+    HEADERS['Cookie'] = datayes_cookie
+    print("成功加载Cookie，将使用认证模式访问API。")
+else:
+    print("警告: 未找到Cookie，将尝试匿名访问API（可能失败）。")
+
+
 def fetch_omo_from_datayes(days=90):
-    """从Datayes API获取央行公开市场操作数据"""
     print("开始从Datayes API抓取OMO数据...")
     url = "https://robo.datayes.com/v2/client/market/get_open_market_op"
-    # API需要一个POST请求体，我们请求最近3个月(3M)的逆回购(RRP)数据
     payload = {"opType": "RRP", "period": "3M"}
     try:
         response = requests.post(url, headers=HEADERS, json=payload, timeout=20)
@@ -27,7 +37,7 @@ def fetch_omo_from_datayes(days=90):
         json_data = response.json()
 
         if json_data.get('code') != 0 or not isinstance(json_data.get('data'), list):
-            print(f"  - Datayes OMO API返回错误或格式不正确: {json_data.get('message')}")
+            print(f"  - Datayes OMO API返回错误或格式不正确: {json_data}")
             return pd.DataFrame()
 
         data = json_data['data']
@@ -49,7 +59,6 @@ def fetch_omo_from_datayes(days=90):
         return pd.DataFrame()
 
 def fetch_dr007_from_datayes(days=90):
-    """从Datayes API获取DR007历史数据"""
     print("开始从Datayes API抓取 DR007 历史利率数据...")
     url = "https://robo.datayes.com/v2/client/market/get_interbank_rate"
     payload = {"rateType": "DR", "period": "3M"}
@@ -59,7 +68,7 @@ def fetch_dr007_from_datayes(days=90):
         json_data = response.json()
 
         if json_data.get('code') != 0 or not isinstance(json_data.get('data'), list):
-            print(f"  - Datayes DR007 API返回错误或格式不正确: {json_data.get('message')}")
+            print(f"  - Datayes DR007 API返回错误或格式不正确: {json_data}")
             return pd.DataFrame()
 
         data = json_data['data']
