@@ -1,4 +1,4 @@
-# generate_report.py (V14 - Final Method Fix)
+# generate_report.py (V15 - Final API Gateway Fix)
 
 import requests
 import pandas as pd
@@ -22,10 +22,10 @@ else:
 
 def fetch_omo_from_datayes(days=90):
     print("开始从Datayes API抓取OMO数据...")
-    url = "https://robo.datayes.com/v2/client/market/get_open_market_op"
+    # 【最终修复】: 使用正确的API网关地址
+    url = "https://gw.datayes.com/rrp_adventure/client/market/get_open_market_op"
     payload = {"opType": "RRP", "period": "3M"}
     try:
-        # 【最终修复】: 将请求方法从 POST 改为 GET，参数从 json 改为 params
         response = requests.get(url, headers=HEADERS, params=payload, timeout=20)
         response.raise_for_status()
         json_data = response.json()
@@ -54,10 +54,10 @@ def fetch_omo_from_datayes(days=90):
 
 def fetch_dr007_from_datayes(days=90):
     print("开始从Datayes API抓取 DR007 历史利率数据...")
-    url = "https://robo.datayes.com/v2/client/market/get_interbank_rate"
+    # 【最终修复】: 使用正确的API网关地址
+    url = "https://gw.datayes.com/rrp_adventure/client/market/get_interbank_rate"
     payload = {"rateType": "DR", "period": "3M"}
     try:
-        # 【最终修复】: 将请求方法从 POST 改为 GET，参数从 json 改为 params
         response = requests.get(url, headers=HEADERS, params=payload, timeout=20)
         response.raise_for_status()
         json_data = response.json()
